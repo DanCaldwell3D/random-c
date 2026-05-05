@@ -67,6 +67,7 @@ typedef struct {
     Vec2 position;
     Vec2 velocity;
     float radius;
+    float mass;
     SDL_FColor color;
 } Ball;
 
