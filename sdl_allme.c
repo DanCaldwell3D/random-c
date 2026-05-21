@@ -1,6 +1,3 @@
-#include <SDL3/SDL_oldnames.h>
-#include <SDL3/SDL_pixels.h>
-#include <SDL3/SDL_stdinc.h>
 #define SDL_MAIN_USE_CALLBACKS 1
 
 #include <SDL3/SDL.h>
@@ -18,16 +15,16 @@
 // Vec2 struct and functions
 
 typedef struct {
-    double x;
-    double y;
+    float x;
+    float y;
 } Vec2;
 
-void vec2_add_inplace(Vec2* vec_a, Vec2* vec_b) {
+void vec2_add_inplace(Vec2* vec_a, const Vec2* vec_b) {
     vec_a->x = vec_a->x + vec_b->x;
     vec_a->y = vec_a->y + vec_b->y;
 }
 
-Vec2 vec2_add(Vec2* vec_a, Vec2* vec_b) {
+Vec2 vec2_add(const Vec2* vec_a, const Vec2* vec_b) {
     Vec2 result;
     result.x = vec_a->x + vec_b->x;
     result.y = vec_a->y + vec_b->y;
@@ -35,12 +32,12 @@ Vec2 vec2_add(Vec2* vec_a, Vec2* vec_b) {
     return result;
 }
 
-void vec2_subtract_inplace(Vec2* vec_a, Vec2* vec_b) {
+void vec2_subtract_inplace(Vec2* vec_a, const Vec2* vec_b) {
     vec_a->x = vec_a->x - vec_b->x;
     vec_a->y = vec_a->y - vec_b->y;
 }
 
-Vec2 vec2_subtract(Vec2* vec_a, Vec2* vec_b) {
+Vec2 vec2_subtract(const Vec2* vec_a, const Vec2* vec_b) {
     Vec2 result;
     result.x = vec_a->x - vec_b->x;
     result.y = vec_a->y - vec_b->y;
@@ -48,12 +45,12 @@ Vec2 vec2_subtract(Vec2* vec_a, Vec2* vec_b) {
     return result;
 }
 
-void vec2_scalar_multiply_inplace(Vec2* vec, double scalar) {
+void vec2_scale_inplace(Vec2* vec, const float scalar) {
     vec->x = vec->x * scalar;
     vec->y = vec->y * scalar;
 }
 
-Vec2 vec2_scalar_multiply(Vec2* vec, double scalar) {
+Vec2 vec2_scale(const Vec2* vec, const float scalar) {
     Vec2 result;
     result.x = vec->x * scalar;
     result.y = vec->y * scalar;
@@ -61,16 +58,14 @@ Vec2 vec2_scalar_multiply(Vec2* vec, double scalar) {
     return result;
 }
 
-float vec2_length(Vec2* vec) {
-    float vec_length;
-    vec_length = SDL_sqrtf((vec->x * vec->x) + (vec->y * vec->y));
+float vec2_length(const Vec2* vec) {
+    const float vec_length = SDL_sqrtf((vec->x * vec->x) + (vec->y * vec->y));
 
     return vec_length;
 }
 
-float vec2_dotproduct(Vec2* vec_a, Vec2* vec_b) {
-    float dot_product;
-    dot_product = (vec_a->x * vec_b->x) + (vec_a->y * vec_b->y);
+float vec2_dotproduct(const Vec2* vec_a, const Vec2* vec_b) {
+    const float dot_product = (vec_a->x * vec_b->x) + (vec_a->y * vec_b->y);
 
     return dot_product;
 }
@@ -99,7 +94,7 @@ typedef struct {
     IntListNode* node;
 } IntList;
 
-IntListNode* create_list_node(int value) {
+IntListNode* create_list_node(const int value) {
     IntListNode* node = SDL_malloc(sizeof(IntListNode));
 
     node->value = value;
@@ -142,8 +137,8 @@ void append_list(IntList* list, int value) {
     list->length += 1;
 }
 
-void print_list(IntList* list) {
-    IntListNode* current_node = list->node;
+void print_list(const IntList* list) {
+    const IntListNode* current_node = list->node;
     
     for (int i = 0; i < list->length; i++) {
         printf("\f\n", current_node->value);
@@ -192,13 +187,12 @@ int ball_position_to_grid(AppState* as, int ball_index) {
 }
 
 int get_collision_grid_size() {
-    int num_cells;
     float circumference = MAX_BALL_RADIUS * 2;
 
     int x_cells = (int)SDL_ceilf(WINDOW_WIDTH / circumference);
     int y_cells = (int)SDL_ceilf(WINDOW_HEIGHT / circumference);
 
-    num_cells = x_cells * y_cells;
+    int num_cells = x_cells * y_cells;
 
     return num_cells;
 }
@@ -334,7 +328,7 @@ SDL_FColor hsv_to_rgb(float hue, float saturation, float value) {
             b = 0.0;
     }
 
-    SDL_FColor rgba = {r, g, b, 1.0};
+    const SDL_FColor rgba = {r, g, b, 1.0};
 
     return rgba;
 }
@@ -392,26 +386,26 @@ void handle_ball_collision_no_mass(AppState* as, int ball_index_a) {
             if (ball_distance < min_distance) {
                 // scale distance vector to become unit collision normal
                 float normalise_factor = 1.0 / ball_distance;
-                Vec2 collision_normal = vec2_scalar_multiply(&distance_vec, normalise_factor);
+                Vec2 collision_normal = vec2_scale(&distance_vec, normalise_factor);
 
                 // move balls apart
                 float move_distance = min_distance - ball_distance;
             
-                Vec2 move_vec_a = vec2_scalar_multiply(&collision_normal, move_distance / 2.0 * -1.0);
+                Vec2 move_vec_a = vec2_scale(&collision_normal, move_distance / 2.0 * -1.0);
                 Vec2 new_position_a = vec2_add(&as->ball_array[ball_index_a].position, &move_vec_a);
                 as->ball_array[ball_index_a].position = new_position_a;
                 
-                Vec2 move_vec_b = vec2_scalar_multiply(&collision_normal, move_distance / 2.0);
+                Vec2 move_vec_b = vec2_scale(&collision_normal, move_distance / 2.0);
                 Vec2 new_position_b = vec2_add(&as->ball_array[ball_index_b].position, &move_vec_b);
                 as->ball_array[ball_index_b].position = new_position_b;
                 
                 // calculate new velocities
                 float dot_product_a = vec2_dotproduct(&as->ball_array[ball_index_a].velocity, &collision_normal);
-                Vec2 transform_a = vec2_scalar_multiply(&collision_normal, -2.0 * dot_product_a);
+                Vec2 transform_a = vec2_scale(&collision_normal, -2.0 * dot_product_a);
                 vec2_add_inplace(&as->ball_array[ball_index_a].velocity, &transform_a);
 
                 float dot_product_b = vec2_dotproduct(&as->ball_array[ball_index_b].velocity, &collision_normal);
-                Vec2 transform_b = vec2_scalar_multiply(&collision_normal, -2.0 * dot_product_b);
+                Vec2 transform_b = vec2_scale(&collision_normal, -2.0 * dot_product_b);
                 vec2_add_inplace(&as->ball_array[ball_index_b].velocity, &transform_b);
             }
         }
