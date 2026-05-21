@@ -1,9 +1,21 @@
+#include <SDL3/SDL_oldnames.h>
+#include <SDL3/SDL_pixels.h>
+#include <SDL3/SDL_stdinc.h>
 #define SDL_MAIN_USE_CALLBACKS 1
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <stdio.h>
 
-#define NUM_BALLS 200
+#define NUM_BALLS 300
+#define SIM_SUBSTEPS 20
+
+#define MIN_BALL_RADIUS 5.0
+#define MAX_BALL_RADIUS 10.0
+#define WINDOW_WIDTH 1000
+#define WINDOW_HEIGHT 1000
+
+// Vec2 struct and functions
 
 typedef struct {
     double x;
@@ -63,6 +75,7 @@ float vec2_dotproduct(Vec2* vec_a, Vec2* vec_b) {
     return dot_product;
 }
 
+
 typedef struct {
     Vec2 position;
     Vec2 velocity;
@@ -70,6 +83,73 @@ typedef struct {
     float mass;
     SDL_FColor color;
 } Ball;
+
+typedef struct {
+    int cell;
+    int neighbours[8];
+} GridCell;
+
+typedef struct IntListNode {
+    int value;
+    struct IntListNode* next;
+} IntListNode;
+
+typedef struct {
+    int length;
+    IntListNode* node;
+} IntList;
+
+IntListNode* create_list_node(int value) {
+    IntListNode* node = SDL_malloc(sizeof(IntListNode));
+
+    node->value = value;
+    node->next = NULL;
+
+    return node;
+}
+
+IntList* new_list() {
+    // holds linked list metadata and pointer to the first node
+    IntList* list = SDL_malloc(sizeof(IntList));
+
+    list->node = NULL;
+    list->length = -1;
+
+    return list;
+}
+
+
+void append_list(IntList* list, int value) {
+    // handle empty list
+    if (list->node == NULL) {
+        list->node = create_list_node(value);
+        list->length += 1;
+        return;
+    }
+
+    // first node
+    IntListNode* current_node = list->node;
+    // following node (NULL if there's only one node)
+    IntListNode* next_node = current_node->next;
+
+    // traverse nodes until the end is reached
+    while (next_node != NULL) {
+        current_node = next_node;
+        next_node = current_node->next;
+    }
+    
+    current_node->next = create_list_node(value);
+    list->length += 1;
+}
+
+void print_list(IntList* list) {
+    IntListNode* current_node = list->node;
+    
+    for (int i = 0; i < list->length; i++) {
+        printf("\f\n", current_node->value);
+        current_node = current_node->next;
+    }
+}
 
 typedef struct {
     SDL_Window* window;
@@ -92,9 +172,61 @@ typedef struct {
     float gravity;
     float scene_scale;  // pixels per metre
 
+    GridCell* collision_grid;
+    int collision_grid_stride_x;
+    int collision_grid_size;
+
     Ball ball_array[NUM_BALLS];
 
 } AppState;
+
+int ball_position_to_grid(AppState* as, int ball_index) {
+    Vec2 position = as->ball_array[ball_index].position;
+    // convert to grid coordinates in x and y
+    int grid_x = (int)position.x / (MAX_BALL_RADIUS * 2);
+    int grid_y = (int)position.y / (MAX_BALL_RADIUS * 2);
+    // convert x and y grid coords to flattened grid
+    int grid_position = (grid_y * as->collision_grid_stride_x) + grid_x;
+
+    return grid_position;
+}
+
+int get_collision_grid_size() {
+    int num_cells;
+    float circumference = MAX_BALL_RADIUS * 2;
+
+    int x_cells = (int)SDL_ceilf(WINDOW_WIDTH / circumference);
+    int y_cells = (int)SDL_ceilf(WINDOW_HEIGHT / circumference);
+
+    num_cells = x_cells * y_cells;
+
+    return num_cells;
+}
+
+int get_collision_grid_stride_x() {
+    float circumference = MAX_BALL_RADIUS * 2;
+    int x_cells = (int)SDL_ceilf(WINDOW_WIDTH / circumference);
+
+    return x_cells;
+}
+
+void init_collision_grid(AppState* as) {
+    as->collision_grid_size = get_collision_grid_size();
+    as->collision_grid_stride_x = get_collision_grid_stride_x();
+    as->collision_grid = (GridCell*)SDL_calloc(as->collision_grid_size, sizeof(GridCell));
+}
+
+void reset_collision_grid(AppState* as) {
+    // reset grid cells to -1 (empty cell)
+    for (int i = 0; i < as->collision_grid_size; i++) {
+         as->collision_grid[i].cell = -1;
+    }
+    // populate grid with ball indices
+    for (int i = 0; i < NUM_BALLS; i++) {
+        int grid_cell = ball_position_to_grid(as, i);
+        as-
+    }
+}
 
 bool SDL_RenderGeoCircle(SDL_Renderer* renderer, float x, float y, float radius, int sides, SDL_FColor color) {
     // draws triangles fanning out from the centre point to create a circle/n-sided polygon
@@ -154,6 +286,59 @@ SDL_FColor fcolor_lerp(SDL_FColor start_color, SDL_FColor end_color, float posit
     return lerp_colour;
 }
 
+SDL_FColor hsv_to_rgb(float hue, float saturation, float value) {
+    // hue range 0-1
+    // saturation range 0-1
+    // value range 0-1
+
+    float r;
+    float g;
+    float b;
+
+    float hue_range = hue * 6.0;
+    // SDL_Log("hue range: %i", (int)hue_range);
+    switch((int)hue_range) {
+        case 0:  // red - yellow
+            r = 1.0;
+            g = hue_range;
+            b = 0.0;
+            break;
+        case 1:  // yellow - green
+            r = 1.0 - (hue_range - 1.0);
+            g = 1.0;
+            b = 0.0;
+            break;
+        case 2:  // green - cyan
+            r = 0.0;
+            g = 1.0;
+            b = hue_range - 2.0;
+            break;
+        case 3:  // cyan - blue
+            r = 0.0;
+            g = 1.0 - (hue_range - 3.0);
+            b = 1.0;
+            break;
+        case 4:  // blue - magenta
+            r = hue_range - 4.0;
+            g = 0.0;
+            b = 1.0;
+            break;
+        case 5:  // magenta - red
+            r = 1.0;
+            g = 0.0;
+            b = 1.0 - (hue_range - 5.0);
+            break;
+        default:
+            r = 1.0;
+            g = 0.0;
+            b = 0.0;
+    }
+
+    SDL_FColor rgba = {r, g, b, 1.0};
+
+    return rgba;
+}
+
 SDL_FColor circle_rainbow_color(AppState* as) {
     
     as->colour_current_time = SDL_GetTicks();
@@ -171,6 +356,8 @@ SDL_FColor circle_rainbow_color(AppState* as) {
 
     return circle_color;
 }
+
+// ball physics
 
 void handle_screen_edge_collision(AppState* as, int ball_index) {
     // x bounds
@@ -231,7 +418,7 @@ void handle_ball_collision_no_mass(AppState* as, int ball_index_a) {
     }
 }
 
-void update_ball_position(AppState* as, int substeps) {
+void update_balls(AppState* as, int substeps) {
     // how much time has passed?
     // double delta_t = (float)(SDL_GetTicksNS() - as->last_time) / 1000000000.0;
     double frame_time = 1.0 / 60.0;
@@ -258,33 +445,51 @@ void update_ball_position(AppState* as, int substeps) {
     as->last_time = SDL_GetTicksNS();
 }
 
+/* Nearest neighbour lookup for collisions 
+
+- create 2d grid for ball indices
+grid size should be based on the maximum ball size and minimum potential for collision (radius * 2?)
+should grid be structured as a flattened array with strides or an array of arrays? try both
+create helper functions
+    to convert grid x, y coordinates to correct grid array index
+    to get neighbouring grid coordinate indices, accounting for edges and corners
+
+- put ball indices into the grid based on the .position
+need to convert between coordinate systems, 
+
+- iterate through the grid squares.
+if the square contains an index:
+    check if it contains more than one index or check if the surrounding squares contain any indices. if so:
+        perform collision checks
+    note - be careful of grid edges/corners, as checks can go out of bounds (literally)
+    if there are two or more indices in total iany of them are populated perform the collision check
+
+*/
+
 // SDL callbacks
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     // create appstate, use calloc to zero out values
     AppState* as = (AppState*)SDL_calloc(1, sizeof(AppState));
     *appstate = as;
-    SDL_Log("ball array length: %lu", sizeof(as->ball_array) / sizeof(Ball));
+    // SDL_Log("ball array length: %lu", sizeof(as->ball_array) / sizeof(Ball));
     as->window_height = 1000;
     as->window_width = 1000;
     
     as->last_time = SDL_GetTicksNS();
-
-    // as->last_circle_color = (SDL_FColor){SDL_randf(), SDL_randf(), SDL_randf(), SDL_ALPHA_OPAQUE_FLOAT};
-    // as->next_circle_color = (SDL_FColor){SDL_randf(), SDL_randf(), SDL_randf(), SDL_ALPHA_OPAQUE_FLOAT};
-    // as->transition_ticks = 500;
-    // as->colour_start_time = SDL_GetTicks();
-    // as->colour_current_time = SDL_GetTicks();
 
     // initialise ball physics
     as->gravity = 9.8;
     as->scene_scale = 20.0;
     
     for (int i = 0; i < sizeof(as->ball_array) / sizeof(Ball); i++) {
+        // initialise balls
         as->ball_array[i].position = (Vec2){SDL_randf() * as->window_width, SDL_randf() * as->window_height};
         as->ball_array[i].velocity = (Vec2){(SDL_randf() - 0.5) * 2.0 * as->scene_scale, (SDL_randf() - 0.5) * as->scene_scale};
         // as->ball_array[i].radius = (SDL_randf() * 15.0) + 5.0;
-        as->ball_array[i].radius = 10.0;
-        as->ball_array[i].color = (SDL_FColor){SDL_randf(), SDL_randf(), SDL_randf(), SDL_ALPHA_OPAQUE_FLOAT};
+        as->ball_array[i].radius = MAX_BALL_RADIUS;
+        as->ball_array[i].mass = SDL_PI_F * as->ball_array[i].radius * as->ball_array[i].radius; // use ball area
+        as->ball_array[i].color = hsv_to_rgb(SDL_randf(), 1.0, 1.0); 
+        // as->ball_array[i].color = (SDL_FColor){SDL_randf(), SDL_randf(), SDL_randf(), SDL_ALPHA_OPAQUE_FLOAT};
 
         // move ball within window bounds if necessary
         if (as->ball_array[i].position.x < as->ball_array[i].radius) {
@@ -297,7 +502,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
         } else if (as->ball_array[i].position.y > as->window_height - as->ball_array[i].radius) {
             as->ball_array[i].position.y = as->window_height - as->ball_array[i].radius;
         }
-        SDL_Log("ball %i pos: %f, %f", i, as->ball_array[i].position.x, as->ball_array[i].position.y);
+        // SDL_Log("ball %i pos: %f, %f", i, as->ball_array[i].position.x, as->ball_array[i].position.y);
     }
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -347,7 +552,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     SDL_SetRenderDrawColorFloat(as->renderer, 1.0, 1.0, 0.0, SDL_ALPHA_OPAQUE_FLOAT);
     
     // SDL_FColor circle_color = circle_rainbow_color(as);
-    update_ball_position(as, 50);
+    update_balls(as, SIM_SUBSTEPS);
 
     for (int i = 0; i < sizeof(as->ball_array) / sizeof(Ball); i++) {
         // SDL_Log("rendering ball %i", i);
