@@ -11,6 +11,7 @@
 #define MAX_BALL_RADIUS 10.0
 #define WINDOW_WIDTH 1000
 #define WINDOW_HEIGHT 1000
+#define GRID_CELL_SIZE 16
 
 // Vec2 struct and functions
 
@@ -80,7 +81,7 @@ typedef struct {
 } Ball;
 
 typedef struct {
-    int cell;
+    int cell[GRID_CELL_SIZE]; // to be replaced with an expandable data format
     int neighbours[8];
 } GridCell;
 
@@ -141,7 +142,7 @@ void print_list(const IntList* list) {
     const IntListNode* current_node = list->node;
     
     for (int i = 0; i < list->length; i++) {
-        printf("\f\n", current_node->value);
+        printf("%i\n", current_node->value);
         current_node = current_node->next;
     }
 }
@@ -175,24 +176,24 @@ typedef struct {
 
 } AppState;
 
-int ball_position_to_grid(AppState* as, int ball_index) {
-    Vec2 position = as->ball_array[ball_index].position;
+int ball_position_to_grid(const AppState* as, const int ball_index) {
+    const Vec2 position = as->ball_array[ball_index].position;
     // convert to grid coordinates in x and y
-    int grid_x = (int)position.x / (MAX_BALL_RADIUS * 2);
-    int grid_y = (int)position.y / (MAX_BALL_RADIUS * 2);
+    const int grid_x = (int)position.x / (MAX_BALL_RADIUS * 2);
+    const int grid_y = (int)position.y / (MAX_BALL_RADIUS * 2);
     // convert x and y grid coords to flattened grid
-    int grid_position = (grid_y * as->collision_grid_stride_x) + grid_x;
+    const int grid_position = (grid_y * as->collision_grid_stride_x) + grid_x;
 
     return grid_position;
 }
 
 int get_collision_grid_size() {
-    float circumference = MAX_BALL_RADIUS * 2;
+    const float circumference = MAX_BALL_RADIUS * 2;
 
-    int x_cells = (int)SDL_ceilf(WINDOW_WIDTH / circumference);
-    int y_cells = (int)SDL_ceilf(WINDOW_HEIGHT / circumference);
+    const int x_cells = (int)SDL_ceilf(WINDOW_WIDTH / circumference);
+    const int y_cells = (int)SDL_ceilf(WINDOW_HEIGHT / circumference);
 
-    int num_cells = x_cells * y_cells;
+    const int num_cells = x_cells * y_cells;
 
     return num_cells;
 }
@@ -210,15 +211,40 @@ void init_collision_grid(AppState* as) {
     as->collision_grid = (GridCell*)SDL_calloc(as->collision_grid_size, sizeof(GridCell));
 }
 
-void reset_collision_grid(AppState* as) {
+void clear_grid_cell(const AppState* as, const int cell_index) {
+    for (int i = 0; i < GRID_CELL_SIZE; i++) {
+        as->collision_grid[cell_index].cell[i] = -1;
+    }
+}
+
+void add_ball_to_grid(const AppState* as, const int ball_index, const int cell_index) {
+    for (int i = 0; i < GRID_CELL_SIZE; i++) {
+        if (as->collision_grid[cell_index].cell[i] == -1) {
+            as->collision_grid[cell_index].cell[i] = ball_index;
+            return;
+        }
+    }
+}
+
+void populate_cell_neighbours(const AppState* as, const int cell_index) {
+    /* cell neighbour order
+     * 0, 1, 2
+     * 3, *, 4
+     * 5, 6, 7
+     */
+    // 
+}
+
+void reset_collision_grid(const AppState* as) {
     // reset grid cells to -1 (empty cell)
     for (int i = 0; i < as->collision_grid_size; i++) {
-         as->collision_grid[i].cell = -1;
+        clear_grid_cell(as, i);
     }
     // populate grid with ball indices
     for (int i = 0; i < NUM_BALLS; i++) {
-        int grid_cell = ball_position_to_grid(as, i);
-        as-
+        const int grid_cell = ball_position_to_grid(as, i);
+        add_ball_to_grid(as, i, grid_cell);
+
     }
 }
 
