@@ -1,5 +1,5 @@
 
-#include <SDL3/SDL_error.h>
+#include <stdbool.h>
 #define SDL_MAIN_USE_CALLBACKS 1
 
 #include <SDL3/SDL.h>
@@ -7,13 +7,14 @@
 #include <stdio.h>
 
 #define NUM_BALLS 4000
-#define SIM_SUBSTEPS 5
+#define SIM_SUBSTEPS 16
+#define RESTITUTION 0.8
 
-#define MIN_BALL_RADIUS 3.0
-#define MAX_BALL_RADIUS 8.0
+#define MIN_BALL_RADIUS 5.0
+#define MAX_BALL_RADIUS 5.0
 #define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 1000
-#define GRID_CELL_SIZE 16
+#define GRID_CELL_SIZE 24
 
 // Vec2 struct and functions
 
@@ -79,6 +80,7 @@ typedef struct {
     Vec2 velocity;
     float radius;
     float mass;
+    bool rest;
     SDL_FColor color;
 } Ball;
 
@@ -464,46 +466,6 @@ void handle_screen_edge_collision(AppState* as, int ball_index) {
     }
 }
 
-// void handle_ball_collision_no_mass(AppState* as, int ball_index_a) {
-//     int array_len = sizeof(as->ball_array) / sizeof(Ball);
-//     for (int ball_index_b = 0; ball_index_b < array_len; ball_index_b++) {
-//         if (ball_index_b == ball_index_a) {
-//             continue;
-//         } else {
-
-//             Vec2 distance_vec = vec2_subtract(&as->ball_array[ball_index_b].position, &as->ball_array[ball_index_a].position);
-//             float ball_distance = vec2_length(&distance_vec);
-//             float min_distance = as->ball_array[ball_index_a].radius + as->ball_array[ball_index_b].radius;
-
-//             if (ball_distance < min_distance) {
-//                 // scale distance vector to become unit collision normal
-//                 float normalise_factor = 1.0 / ball_distance;
-//                 Vec2 collision_normal = vec2_scale(&distance_vec, normalise_factor);
-
-//                 // move balls apart
-//                 float move_distance = min_distance - ball_distance;
-            
-//                 Vec2 move_vec_a = vec2_scale(&collision_normal, move_distance / 2.0 * -1.0);
-//                 Vec2 new_position_a = vec2_add(&as->ball_array[ball_index_a].position, &move_vec_a);
-//                 as->ball_array[ball_index_a].position = new_position_a;
-                
-//                 Vec2 move_vec_b = vec2_scale(&collision_normal, move_distance / 2.0);
-//                 Vec2 new_position_b = vec2_add(&as->ball_array[ball_index_b].position, &move_vec_b);
-//                 as->ball_array[ball_index_b].position = new_position_b;
-                
-//                 // calculate new velocities
-//                 float dot_product_a = vec2_dotproduct(&as->ball_array[ball_index_a].velocity, &collision_normal);
-//                 Vec2 transform_a = vec2_scale(&collision_normal, -2.0 * dot_product_a);
-//                 vec2_add_inplace(&as->ball_array[ball_index_a].velocity, &transform_a);
-
-//                 float dot_product_b = vec2_dotproduct(&as->ball_array[ball_index_b].velocity, &collision_normal);
-//                 Vec2 transform_b = vec2_scale(&collision_normal, -2.0 * dot_product_b);
-//                 vec2_add_inplace(&as->ball_array[ball_index_b].velocity, &transform_b);
-//             }
-//         }
-//     }
-// }
-
 void handle_ball_collision_no_mass(AppState* as, int ball_index_a, int ball_index_b) {
 
     Vec2 distance_vec = vec2_subtract(&as->ball_array[ball_index_b].position, &as->ball_array[ball_index_a].position);
@@ -570,13 +532,34 @@ void handle_ball_collision(AppState* as, int ball_index_a, int ball_index_b) {
         as->ball_array[ball_index_b].position = new_position_b;
         
         // calculate new velocities
-        float dot_product_a = vec2_dotproduct(&as->ball_array[ball_index_a].velocity, &collision_normal);
-        Vec2 transform_a = vec2_scale(&collision_normal, -2.0 * dot_product_a);
-        vec2_add_inplace(&as->ball_array[ball_index_a].velocity, &transform_a);
+        float mass_a = as->ball_array[ball_index_a].mass;
+        float mass_b = as->ball_array[ball_index_b].mass;
+        float total_mass = mass_a + mass_b;
 
-        float dot_product_b = vec2_dotproduct(&as->ball_array[ball_index_b].velocity, &collision_normal);
-        Vec2 transform_b = vec2_scale(&collision_normal, -2.0 * dot_product_b);
-        vec2_add_inplace(&as->ball_array[ball_index_b].velocity, &transform_b);
+        float projected_velocity_a = vec2_dotproduct(&as->ball_array[ball_index_a].velocity, &collision_normal);
+        float projected_velocity_b = vec2_dotproduct(&as->ball_array[ball_index_b].velocity, &collision_normal);
+        
+        float momentum_a = mass_a * projected_velocity_a;
+        float momentum_b = mass_b * projected_velocity_b;
+        float restitution = RESTITUTION;
+
+        float mass_projected_velocity_a =
+            (momentum_a + momentum_b -
+            mass_b * (projected_velocity_a - projected_velocity_b) * restitution) /
+            total_mass;
+
+        float mass_projected_velocity_b =
+            (momentum_a + momentum_b -
+            mass_a * (projected_velocity_b - projected_velocity_a) * restitution) /
+            total_mass;
+        
+        Vec2 collision_velocity_a = vec2_scale(&collision_normal, (mass_projected_velocity_a - projected_velocity_a));
+        Vec2 collision_velocity_b = vec2_scale(&collision_normal, (mass_projected_velocity_b - projected_velocity_b));
+
+
+        vec2_add_inplace(&as->ball_array[ball_index_a].velocity, &collision_velocity_a);
+        vec2_add_inplace(&as->ball_array[ball_index_b].velocity, &collision_velocity_b);
+
     }
 }
 
@@ -586,6 +569,7 @@ void update_balls(AppState* as, int substeps) {
     double delta_t = frame_time / substeps;
 
     for (int i = 0; i < substeps; i++) {
+        reset_collision_grid(as);
         for (int ball_index = 0; ball_index < NUM_BALLS; ball_index++) {
             // apply gravity
             as->ball_array[ball_index].velocity.y += (as->gravity * as->scene_scale * delta_t);
@@ -603,10 +587,10 @@ void update_balls(AppState* as, int substeps) {
                 int grid_subcell = as->collision_grid[grid_cell].cell[j];
                 if (grid_subcell == -1) {
                     break;
-                } else if (grid_subcell == ball_index) {
+                } else if (grid_subcell <= ball_index) {
                     continue;
                 } else {
-                    handle_ball_collision_no_mass(as, ball_index, grid_subcell);
+                    handle_ball_collision(as, ball_index, grid_subcell);
                 }
             }
 
@@ -617,10 +601,10 @@ void update_balls(AppState* as, int substeps) {
                     // check if the neighbouring cell contains balls
                     for (int j = 0; j < GRID_CELL_SIZE; j++) {
                         int grid_subcell = as->collision_grid[neighbour_cell].cell[j];
-                        if (grid_subcell == -1 || grid_subcell == ball_index) {
+                        if (grid_subcell == -1 || grid_subcell <= ball_index) {
                             continue;
                         } else {
-                            handle_ball_collision_no_mass(as, ball_index, grid_subcell);
+                            handle_ball_collision(as, ball_index, grid_subcell);
                         }
                     }
                 }
@@ -679,8 +663,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
         as->ball_array[i].velocity = (Vec2){(SDL_randf() - 0.5) * 2.0 * as->scene_scale, (SDL_randf() - 0.5) * as->scene_scale};
         as->ball_array[i].radius = (SDL_randf() * (MAX_BALL_RADIUS - MIN_BALL_RADIUS)) + MIN_BALL_RADIUS;
         // as->ball_array[i].radius = MAX_BALL_RADIUS;
-        as->ball_array[i].mass = SDL_PI_F * as->ball_array[i].radius * as->ball_array[i].radius; // use ball area
+        as->ball_array[i].mass = (SDL_PI_F * as->ball_array[i].radius * as->ball_array[i].radius) / as->scene_scale; // use ball area
         as->ball_array[i].color = hsv_to_rgb(SDL_randf(), 1.0, 1.0); 
+        as->ball_array[i].rest = false;
         // as->ball_array[i].color = (SDL_FColor){SDL_randf(), SDL_randf(), SDL_randf(), SDL_ALPHA_OPAQUE_FLOAT};
 
         // move ball within window bounds if necessary
@@ -747,7 +732,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     
     SDL_SetRenderDrawColorFloat(as->renderer, 1.0, 1.0, 0.0, SDL_ALPHA_OPAQUE_FLOAT);
     
-    reset_collision_grid(as);
+    
     // SDL_FColor circle_color = circle_rainbow_color(as);
     update_balls(as, SIM_SUBSTEPS);
 
@@ -766,6 +751,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
         AppState* as = appstate;
         SDL_DestroyRenderer(as->renderer);
         SDL_DestroyWindow(as->window);
+        SDL_free(as->collision_grid);
         SDL_free(as);
     }
 }
