@@ -6,12 +6,12 @@
 #include <SDL3/SDL_main.h>
 #include <stdio.h>
 
-#define NUM_BALLS 4000
+#define NUM_BALLS 500
 #define SIM_SUBSTEPS 16
-#define RESTITUTION 0.8
+#define RESTITUTION 0.95
 
 #define MIN_BALL_RADIUS 5.0
-#define MAX_BALL_RADIUS 5.0
+#define MAX_BALL_RADIUS 30.0
 #define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 1000
 #define GRID_CELL_SIZE 24
@@ -87,7 +87,7 @@ typedef struct {
 typedef struct {
     int cell[GRID_CELL_SIZE]; // to be replaced with an expandable data format
     int neighbours[8];
-} GridCell;
+} GridCell2D;
 
 typedef struct IntListNode {
     int value;
@@ -172,7 +172,7 @@ typedef struct {
     float gravity;
     float scene_scale;  // pixels per metre
 
-    GridCell* collision_grid;
+    GridCell2D* collision_grid;
     int collision_grid_stride_x;
     int collision_grid_size;
 
@@ -223,7 +223,7 @@ void populate_cell_neighbours(const AppState* as, const int cell_index) {
      * 5, 6, 7
      */
     
-    GridCell* cell = &as->collision_grid[cell_index];
+    GridCell2D* cell = &as->collision_grid[cell_index];
     
     // fill cells
     cell->neighbours[0] = cell_index - as->collision_grid_stride_x - 1;
@@ -273,7 +273,7 @@ void clear_grid_cell(const AppState* as, const int cell_index) {
 void init_collision_grid(AppState* as) {
     as->collision_grid_size = get_collision_grid_size();
     as->collision_grid_stride_x = get_collision_grid_stride_x();
-    as->collision_grid = (GridCell*)SDL_calloc(as->collision_grid_size, sizeof(GridCell));
+    as->collision_grid = (GridCell2D*)SDL_calloc(as->collision_grid_size, sizeof(GridCell2D));
     
     if (!as->collision_grid) {
         SDL_Log("collision grid allocation failed: %s", SDL_GetError());
