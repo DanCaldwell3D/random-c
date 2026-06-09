@@ -1,6 +1,6 @@
 #include <stdlib.h>
+#include <stdbool.h>
 #include <math.h>
-#include <sys/types.h>
 
 #define GRID_CELL_SIZE 16
 
@@ -15,6 +15,19 @@ typedef struct {
     int num_cells;
     float cell_size;
 } Grid2D;
+
+// declarations
+
+int get_2d_collision_grid_size(const float size_x, const float size_y, const float cell_size);
+int get_2d_collision_grid_stride_x(const float size_x, const float cell_size);
+Grid2D* new_2d_collision_grid(const float size_x, const float size_y, const float cell_size);
+void clear_2d_grid_cell(const Grid2D* grid, const int cell_index);
+void populate_2d_cell_neighbours(const Grid2D* grid, const int cell_index);
+void init_2d_collision_grid(const Grid2D* grid);
+void reset_2d_collision_grid(const Grid2D* grid);
+void add_item_index_to_grid(const Grid2D* grid, const int item_index, const int cell_index);
+bool is_cell_occupied(const Grid2D* grid, const int cell_index);
+
 
 // int ball_position_to_grid(const AppState* as, const int ball_index) {
 //     const Vec2 position = as->ball_array[ball_index].position;
@@ -35,7 +48,8 @@ typedef struct {
 // }
 
 int get_2d_collision_grid_size(const float size_x, const float size_y, const float cell_size) {
-    
+    // returns the total number of cells within the given area
+
     const int x_cells = (int)ceilf(size_x / cell_size);
     const int y_cells = (int)ceilf(size_y / cell_size);
     
@@ -45,6 +59,7 @@ int get_2d_collision_grid_size(const float size_x, const float size_y, const flo
 }
 
 int get_2d_collision_grid_stride_x(const float size_x, const float cell_size) {
+    // returns the number of cells across the x axis
 
     const int x_cells = (int)ceilf(size_x / cell_size);
 
@@ -52,6 +67,9 @@ int get_2d_collision_grid_stride_x(const float size_x, const float cell_size) {
 }
 
 Grid2D* new_2d_collision_grid(const float size_x, const float size_y, const float cell_size) {
+    // creates a new grid at the given cell size that covers the given dimensions
+    // calculates and stores cell size, grid stride along x axis, and total number
+    // of cells for easy traversal
 
     Grid2D* grid = malloc(sizeof(Grid2D));
 
@@ -65,18 +83,9 @@ Grid2D* new_2d_collision_grid(const float size_x, const float size_y, const floa
 }
 
 void clear_2d_grid_cell(const Grid2D* grid, const int cell_index) {
-
+    // sets all grid cells to -1
     for (int i = 0; i < GRID_CELL_SIZE; i++) {
         grid->grid_cells[cell_index].cell[i] = -1;
-    }
-
-}
-
-void init_2d_collision_grid(const Grid2D* grid) {
-
-    for (int i = 0; i < grid->num_cells; i++) {
-        clear_2d_grid_cell(grid, i);
-
     }
 }
 
@@ -128,50 +137,50 @@ void populate_2d_cell_neighbours(const Grid2D* grid, const int cell_index) {
     }
 }
 
-
-void init_collision_grid(AppState* as) {
-    as->collision_grid_size = get_collision_grid_size();
-    as->collision_grid_stride_x = get_collision_grid_stride_x();
-    as->collision_grid = (GridCell2D*)SDL_calloc(as->collision_grid_size, sizeof(GridCell2D));
-    
-    if (!as->collision_grid) {
-        SDL_Log("collision grid allocation failed: %s", SDL_GetError());
-    } else {
-        for (int i = 0; i < as->collision_grid_size; i++) {
-            clear_grid_cell(as, i);
-        }
+void init_2d_collision_grid(const Grid2D* grid) {
+    // set all grid cells to -1 (empty) and initialise neighbour grid lookups
+    for (int i = 0; i < grid->num_cells; i++) {
+        clear_2d_grid_cell(grid, i);
+        populate_2d_cell_neighbours(grid, i);
     }
-
-    for (int i = 0; i < as->collision_grid_size; i++) {
-        populate_cell_neighbours(as, i);
+}
+void reset_2d_collision_grid(const Grid2D* grid) {
+    // set all grid cells to -1 (empty)
+    for (int i = 0; i < grid->num_cells; i++) {
+        clear_2d_grid_cell(grid, i);
     }
 }
 
-void add_ball_to_grid(const AppState* as, const int ball_index, const int cell_index) {
+void add_item_index_to_grid(const Grid2D* grid, const int item_index, const int cell_index) {
+    // adds an item index to the given grid cell
+
     for (int i = 0; i < GRID_CELL_SIZE; i++) {
-        if (as->collision_grid[cell_index].cell[i] == -1) {
-            as->collision_grid[cell_index].cell[i] = ball_index;
+
+        if (grid->grid_cells[cell_index].cell[i] == -1) {
+            grid->grid_cells[cell_index].cell[i] = item_index;
             return;
         }
     }
 }
 
-bool is_cell_occupied(const AppState* as, const int cell_index) {
-    if (as->collision_grid[cell_index].cell[0] != -1) {
+bool is_cell_occupied(const Grid2D* grid, const int cell_index) {
+    // checks if the first sub-cell of a grid cell is empty (-1)
+
+    if (grid->grid_cells[cell_index].cell[0] != -1) {
         return true;
     } else {
         return false;
     }
 }
 
-void reset_collision_grid(const AppState* as) {
-    // reset grid cells to -1 (empty cell)
-    for (int i = 0; i < as->collision_grid_size; i++) {
-        clear_grid_cell(as, i);
-    }
-    // populate grid with ball indices
-    for (int i = 0; i < NUM_BALLS; i++) {
-        const int grid_cell = ball_position_to_grid(as, i);
-        add_ball_to_grid(as, i, grid_cell);
-    }
-}
+// void reset_collision_grid(const Grid2D* grid) {
+//     // reset grid cells to -1 (empty cell)
+//     for (int i = 0; i < grid->num_cells; i++) {
+//         clear_2d_grid_cell(grid, i);
+//     }
+//     // populate grid with ball indices
+//     for (int i = 0; i < NUM_BALLS; i++) {
+//         const int grid_cell = ball_position_to_grid(as, i);
+//         add_ball_to_grid(as, i, grid_cell);
+//     }
+// }
