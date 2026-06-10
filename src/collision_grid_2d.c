@@ -11,7 +11,7 @@ typedef struct {
 
 typedef struct {
     GridCell2D* grid_cells;
-    int grid_stride;
+    int grid_row_length;
     int num_cells;
     float cell_size;
 } Grid2D;
@@ -27,25 +27,27 @@ void init_2d_collision_grid(const Grid2D* grid);
 void reset_2d_collision_grid(const Grid2D* grid);
 void add_item_index_to_grid(const Grid2D* grid, const int item_index, const int cell_index);
 bool is_cell_occupied(const Grid2D* grid, const int cell_index);
+int xy_location_to_grid_cell(const Grid2D* grid, const float x, const float y);
 
 
-// int ball_position_to_grid(const AppState* as, const int ball_index) {
-//     const Vec2 position = as->ball_array[ball_index].position;
-//     const int cell = (int)(MAX_BALL_RADIUS * 2);
-//     int grid_x = (int)position.x / cell;
-//     int grid_y = (int)position.y / cell;
+int xy_location_to_grid_cell(const Grid2D* grid, const float x, const float y) {
+    // returns the grid cell that corresponds to the given x and y locations
 
-//     const int max_x = as->collision_grid_stride_x - 1;
-//     const int max_y = (as->collision_grid_size / as->collision_grid_stride_x) - 1;
+    int grid_x = (int)x / grid->cell_size;
+    int grid_y = (int)y / grid->cell_size;
 
-//     if (grid_x < 0) grid_x = 0;
-//     else if (grid_x > max_x) grid_x = max_x;
+    // bounds checking and enforcement
+    const int max_x = grid->grid_row_length - 1;
+    const int max_y = (grid->num_cells / grid->grid_row_length) - 1;
 
-//     if (grid_y < 0) grid_y = 0;
-//     else if (grid_y > max_y) grid_y = max_y;
+    if (grid_x < 0) grid_x = 0;
+    else if (grid_x > max_x) grid_x = max_x;
 
-//     return grid_y * as->collision_grid_stride_x + grid_x;
-// }
+    if (grid_y < 0) grid_y = 0;
+    else if (grid_y > max_y) grid_y = max_y;
+
+    return grid_y * grid->grid_row_length + grid_x;
+}
 
 int get_2d_collision_grid_size(const float size_x, const float size_y, const float cell_size) {
     // returns the total number of cells within the given area
@@ -75,7 +77,7 @@ Grid2D* new_2d_collision_grid(const float size_x, const float size_y, const floa
 
     grid->cell_size = cell_size;
     grid->num_cells = get_2d_collision_grid_size(size_x, size_y, cell_size);
-    grid->grid_stride = get_2d_collision_grid_stride_x(size_x, cell_size);
+    grid->grid_row_length = get_2d_collision_grid_stride_x(size_x, cell_size);
 
     grid->grid_cells = (GridCell2D*)calloc(grid->num_cells, sizeof(GridCell2D));
 
@@ -83,7 +85,7 @@ Grid2D* new_2d_collision_grid(const float size_x, const float size_y, const floa
 }
 
 void clear_2d_grid_cell(const Grid2D* grid, const int cell_index) {
-    // sets all grid cells to -1
+    // sets all sub-cells to -1 in the given grid cell
     for (int i = 0; i < GRID_CELL_SIZE; i++) {
         grid->grid_cells[cell_index].cell[i] = -1;
     }
@@ -99,38 +101,38 @@ void populate_2d_cell_neighbours(const Grid2D* grid, const int cell_index) {
     GridCell2D* cell = &grid->grid_cells[cell_index];
     
     // fill cells
-    cell->neighbours[0] = cell_index - grid->grid_stride - 1;
-    cell->neighbours[1] = cell_index - grid->grid_stride;
-    cell->neighbours[2] = cell_index - grid->grid_stride + 1;
+    cell->neighbours[0] = cell_index - grid->grid_row_length - 1;
+    cell->neighbours[1] = cell_index - grid->grid_row_length;
+    cell->neighbours[2] = cell_index - grid->grid_row_length + 1;
     cell->neighbours[3] = cell_index - 1;
     cell->neighbours[4] = cell_index + 1;
-    cell->neighbours[5] = cell_index + grid->grid_stride - 1;
-    cell->neighbours[6] = cell_index + grid->grid_stride;
-    cell->neighbours[7] = cell_index + grid->grid_stride + 1;
+    cell->neighbours[5] = cell_index + grid->grid_row_length - 1;
+    cell->neighbours[6] = cell_index + grid->grid_row_length;
+    cell->neighbours[7] = cell_index + grid->grid_row_length + 1;
 
     // handle top edge
-    if (cell_index < grid->grid_stride) {
+    if (cell_index < grid->grid_row_length) {
         cell->neighbours[0] = -1;
         cell->neighbours[1] = -1;
         cell->neighbours[2] = -1;
     }
 
     // handle bottom edge
-    if (cell_index >= (grid->num_cells - grid->grid_stride)) {
+    if (cell_index >= (grid->num_cells - grid->grid_row_length)) {
         cell->neighbours[5] = -1;
         cell->neighbours[6] = -1;
         cell->neighbours[7] = -1;
     }
 
     // handle left edge
-    if (cell_index % grid->grid_stride == 0) {
+    if (cell_index % grid->grid_row_length == 0) {
         cell->neighbours[0] = -1;
         cell->neighbours[3] = -1;
         cell->neighbours[5] = -1;
     }
 
     // handle right edge
-    if (cell_index % grid->grid_stride == grid->grid_stride - 1) {
+    if (cell_index % grid->grid_row_length == grid->grid_row_length - 1) {
         cell->neighbours[2] = -1;
         cell->neighbours[4] = -1;
         cell->neighbours[7] = -1;
