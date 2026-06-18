@@ -1,7 +1,6 @@
-
-#include <stdbool.h>
 #define SDL_MAIN_USE_CALLBACKS 1
 
+#include <stdbool.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <stdio.h>
@@ -14,7 +13,7 @@
 #define MAX_BALL_RADIUS 30.0
 #define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 1000
-#define GRID_CELL_SIZE 24
+#define MAX_BALLS_PER_CELL 24
 
 // Vec2 struct and functions
 
@@ -85,71 +84,9 @@ typedef struct {
 } Ball;
 
 typedef struct {
-    int cell[GRID_CELL_SIZE]; // to be replaced with an expandable data format
+    int cell[MAX_BALLS_PER_CELL]; // to be replaced with an expandable data format
     int neighbours[8];
 } GridCell2D;
-
-typedef struct IntListNode {
-    int value;
-    struct IntListNode* next;
-} IntListNode;
-
-typedef struct {
-    int length;
-    IntListNode* node;
-} IntList;
-
-IntListNode* create_list_node(const int value) {
-    IntListNode* node = SDL_malloc(sizeof(IntListNode));
-
-    node->value = value;
-    node->next = NULL;
-
-    return node;
-}
-
-IntList* new_list() {
-    // holds linked list metadata and pointer to the first node
-    IntList* list = SDL_malloc(sizeof(IntList));
-
-    list->node = NULL;
-    list->length = -1;
-
-    return list;
-}
-
-
-void append_list(IntList* list, int value) {
-    // handle empty list
-    if (list->node == NULL) {
-        list->node = create_list_node(value);
-        list->length += 1;
-        return;
-    }
-
-    // first node
-    IntListNode* current_node = list->node;
-    // following node (NULL if there's only one node)
-    IntListNode* next_node = current_node->next;
-
-    // traverse nodes until the end is reached
-    while (next_node != NULL) {
-        current_node = next_node;
-        next_node = current_node->next;
-    }
-    
-    current_node->next = create_list_node(value);
-    list->length += 1;
-}
-
-void print_list(const IntList* list) {
-    const IntListNode* current_node = list->node;
-    
-    for (int i = 0; i < list->length; i++) {
-        printf("%i\n", current_node->value);
-        current_node = current_node->next;
-    }
-}
 
 typedef struct {
     SDL_Window* window;
@@ -265,7 +202,7 @@ void populate_cell_neighbours(const AppState* as, const int cell_index) {
 }
 
 void clear_grid_cell(const AppState* as, const int cell_index) {
-    for (int i = 0; i < GRID_CELL_SIZE; i++) {
+    for (int i = 0; i < MAX_BALLS_PER_CELL; i++) {
         as->collision_grid[cell_index].cell[i] = -1;
     }
 }
@@ -289,7 +226,7 @@ void init_collision_grid(AppState* as) {
 }
 
 void add_ball_to_grid(const AppState* as, const int ball_index, const int cell_index) {
-    for (int i = 0; i < GRID_CELL_SIZE; i++) {
+    for (int i = 0; i < MAX_BALLS_PER_CELL; i++) {
         if (as->collision_grid[cell_index].cell[i] == -1) {
             as->collision_grid[cell_index].cell[i] = ball_index;
             return;
@@ -576,14 +513,14 @@ void update_balls(AppState* as, int substeps) {
 
             // update position
             Vec2 timestep_velocity = (Vec2){as->ball_array[ball_index].velocity.x * delta_t * as->scene_scale,
-                as->ball_array[ball_index].velocity.y * as-> scene_scale * delta_t};
+                as->ball_array[ball_index].velocity.y * as->scene_scale * delta_t};
             vec2_add_inplace(&as->ball_array[ball_index].position, &timestep_velocity);
             
             // handle collision with other balls via grid neighbour lookup
             int grid_cell = ball_position_to_grid(as, ball_index);
             
             // look for other balls in same cell
-            for (int j = 0; j < GRID_CELL_SIZE; j++) {
+            for (int j = 0; j < MAX_BALLS_PER_CELL; j++) {
                 int grid_subcell = as->collision_grid[grid_cell].cell[j];
                 if (grid_subcell == -1) {
                     break;
@@ -599,10 +536,10 @@ void update_balls(AppState* as, int substeps) {
                 int neighbour_cell = as->collision_grid[grid_cell].neighbours[neighbour]; 
                 if (neighbour_cell != -1) {
                     // check if the neighbouring cell contains balls
-                    for (int j = 0; j < GRID_CELL_SIZE; j++) {
+                    for (int j = 0; j < MAX_BALLS_PER_CELL; j++) {
                         int grid_subcell = as->collision_grid[neighbour_cell].cell[j];
                         if (grid_subcell == -1 || grid_subcell <= ball_index) {
-                            continue;
+                            break;
                         } else {
                             handle_ball_collision(as, ball_index, grid_subcell);
                         }
