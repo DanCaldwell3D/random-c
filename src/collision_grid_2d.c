@@ -24,7 +24,7 @@ typedef struct {
 } Grid2D;
 
 void populate_cell_neighbours(Grid2D* grid, int cell_index);
-void reset_grid(Grid2D* grid);
+void reset_cell_counts(Grid2D* grid);
 
 /** Return the total number of grid cells needed to cover a size_x by size_y area */
 int get_grid_size(float size_x, float size_y, float cell_size) {
@@ -109,7 +109,7 @@ Grid2D* new_grid(float size_x, float size_y, float cell_size, int max_items) {
         populate_cell_neighbours(grid, i);
     }
 
-    reset_grid(grid);
+    reset_cell_counts(grid);
 
     return grid;
 }
@@ -123,7 +123,7 @@ void free_grid(Grid2D* grid) {
 }
 
 /** Zero out all cell counts in preparation for the count pass */
-void reset_grid(Grid2D* grid) {
+void reset_cell_counts(Grid2D* grid) {
     for (int i = 0; i < grid->num_cells; i++) {
         grid->cells[i].count = 0;
     }
@@ -137,7 +137,7 @@ void increment_cell_count(Grid2D* grid, int cell_index) {
 /** Build pass: compute prefix sums (start offsets) from the per-cell counts
  *  accumulated during the count pass. Resets each count to 0 in preparation
  *  for the insert pass. */
-void build_grid(Grid2D* grid) {
+void compute_cell_offsets(Grid2D* grid) {
     int cursor = 0;
     for (int i = 0; i < grid->num_cells; i++) {
         int c = grid->cells[i].count;
