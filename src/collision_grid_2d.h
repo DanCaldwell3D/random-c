@@ -6,13 +6,13 @@
  *
  *  Usage (four steps per frame):
  *
- *    1. Zero counts:     reset_grid(grid);
+ *    1. Zero counts:     reset_cell_counts(grid);
  *
  *    2. Count pass:      for each item i:
  *                            cell = xy_to_cell(grid, i.x, i.y);
  *                            increment_cell_count(grid, cell);
  *
- *    3. Build pass:      build_grid(grid);        // computes start offsets
+ *    3. Build pass:      compute_cell_offsets(grid);
  *
  *    4. Insert pass:     for each item i:
  *                            cell = xy_to_cell(grid, i.x, i.y);
@@ -46,6 +46,7 @@ typedef struct {
 
 /** Create a grid covering size_x by size_y with uniform cell_size.
  *  flat_items sized to hold up to max_items total.
+ *  Resets grid on creation (step 1)
  *  Returns NULL on allocation failure. */
 Grid2D* new_grid(float size_x, float size_y, float cell_size, int max_items);
 
@@ -53,13 +54,14 @@ Grid2D* new_grid(float size_x, float size_y, float cell_size, int max_items);
 void free_grid(Grid2D* grid);
 
 /** Zero all cell counts (step 1) */
-void reset_grid(Grid2D* grid);
+void reset_cell_counts(Grid2D* grid);
 
-/** Increment count for cell_index (step 2) */
+/** Increment count for cell_index, call
+*   xy_to_cell to get index (step 2) */
 void increment_cell_count(Grid2D* grid, int cell_index);
 
 /** Compute prefix-sum start offsets and reset counts (step 3) */
-void build_grid(Grid2D* grid);
+void compute_cell_offsets(Grid2D* grid);
 
 /** Insert item_index at next slot in cell's range (step 4) */
 void insert_item(Grid2D* grid, int item_index, int cell_index);
