@@ -8,7 +8,7 @@
 
 #include "src/vec2.h"
 #include "src/collision_grid_2d.h"
-#include "src/sdl_helpers.c"
+#include "src/sdl_helpers.h"
 
 #define NUM_BALLS 500
 #define SIM_SUBSTEPS 24
@@ -18,8 +18,6 @@
 #define MAX_BALL_RADIUS 30.0
 #define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 1000
-#define MAX_BALLS_PER_CELL 24
-
 
 typedef struct {
     Vec2 position;
@@ -44,20 +42,13 @@ typedef struct {
 
     Uint64 last_time;
 
-    SDL_FColor last_circle_color;
-    SDL_FColor next_circle_color;
-    int transition_ticks;
-    Uint64 colour_start_time;
-    Uint64 colour_current_time;
-
     double gravity;
     double scene_scale;
 
     Grid2D* collision_grid;
-    int collision_grid_stride_x;
-    int collision_grid_size;
 
     Ball ball_array[NUM_BALLS];
+    SDL_GeoCircles* circles;
 
 } AppState;
 
@@ -131,23 +122,23 @@ SDL_FColor hsv_to_rgb(float hue, float saturation, float value) {
     return rgba;
 }
 
-SDL_FColor circle_rainbow_color(AppState* as) {
+// SDL_FColor circle_rainbow_color(AppState* as) {
 
-    as->colour_current_time = SDL_GetTicks();
-    SDL_FColor circle_color;
+//     as->colour_current_time = SDL_GetTicks();
+//     SDL_FColor circle_color;
 
-    if (as->colour_current_time - as->colour_start_time < as->transition_ticks) {
-        float lerp_position = (float)(as->colour_current_time - as->colour_start_time) / (float)as->transition_ticks;
-        circle_color = fcolor_lerp(as->last_circle_color, as->next_circle_color, lerp_position);
-    } else {
-        as->colour_start_time = as->colour_current_time;
-        as->last_circle_color = as->next_circle_color;
-        as->next_circle_color = (SDL_FColor){SDL_randf(), SDL_randf(), SDL_randf(), SDL_ALPHA_OPAQUE_FLOAT};
-        circle_color = as->last_circle_color;
-    }
+//     if (as->colour_current_time - as->colour_start_time < as->transition_ticks) {
+//         float lerp_position = (float)(as->colour_current_time - as->colour_start_time) / (float)as->transition_ticks;
+//         circle_color = fcolor_lerp(as->last_circle_color, as->next_circle_color, lerp_position);
+//     } else {
+//         as->colour_start_time = as->colour_current_time;
+//         as->last_circle_color = as->next_circle_color;
+//         as->next_circle_color = (SDL_FColor){SDL_randf(), SDL_randf(), SDL_randf(), SDL_ALPHA_OPAQUE_FLOAT};
+//         circle_color = as->last_circle_color;
+//     }
 
-    return circle_color;
-}
+//     return circle_color;
+// }
 
 void handle_screen_edge_collision(AppState* as, int ball_index) {
     if (as->ball_array[ball_index].position.x < as->ball_array[ball_index].radius) {
@@ -289,7 +280,17 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
     as->gravity = 9.8;
     as->scene_scale = 20.0;
 
-    init_collision_grid(as);
+    as->circles = SDL_CreateGeoCircles(
+        NUM_BALLS, 
+        48
+    );
+    
+    as->collision_grid = new_grid(
+        WINDOW_WIDTH, 
+        WINDOW_HEIGHT, 
+        MAX_BALL_RADIUS * 2, 
+        NUM_BALLS
+    );
 
     for (int i = 0; i < NUM_BALLS; i++) {
         as->ball_array[i].position = (Vec2){(double)SDL_randf() * as->window_width, (double)SDL_randf() * as->window_height};
@@ -299,6 +300,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
         as->ball_array[i].color = hsv_to_rgb(SDL_randf(), 1.0f, 1.0f);
         as->ball_array[i].rest = false;
 
+        // move balls inside window bounds if necessary
         if (as->ball_array[i].position.x < as->ball_array[i].radius) {
             as->ball_array[i].position.x = as->ball_array[i].radius;
         } else if (as->ball_array[i].position.x > as->window_width - as->ball_array[i].radius) {
@@ -310,9 +312,37 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
             as->ball_array[i].position.y = as->window_height - as->ball_array[i].radius;
         }
 
-        int cell_index = ball_position_to_grid(as, i);
-        add_ball_to_grid(as, i, cell_index);
+        int cell_index = xy_to_cell(
+            as->collision_grid, 
+            as->ball_array[i].position.x, 
+            as->ball_array[i].position.y
+        );
+
+        increment_cell_count(as->collision_grid, cell_index);
+        
+        SDL_GeoCirclesUpdate(
+            as->circles, 
+            i, 
+            as->ball_array[i].position.x, 
+            as->ball_array[i].position.y, 
+            as->ball_array[i].radius, 
+            as->ball_array[i].color
+        );
     }
+
+    compute_cell_offsets(as->collision_grid);
+
+    for (int i = 0; i < NUM_BALLS; i++) {
+        int cell_index = xy_to_cell(
+            as->collision_grid, 
+            as->ball_array[i].position.x, 
+            as->ball_array[i].position.y
+        );
+
+        insert_item(as->collision_grid, i, cell_index);
+    }
+
+
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         return SDL_APP_FAILURE;
@@ -360,17 +390,14 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     SDL_SetRenderDrawColorFloat(as->renderer, 1.0f, 1.0f, 0.0f, SDL_ALPHA_OPAQUE_FLOAT);
 
-    // SDL_FColor circle_color = circle_rainbow_color(as);
     update_balls(as, SIM_SUBSTEPS);
 
-    for (int i = 0; i < NUM_BALLS; i++) {
-        SDL_RenderGeoCircle(as->renderer,
-            (float)as->ball_array[i].position.x,
-            (float)as->ball_array[i].position.y,
-            (float)as->ball_array[i].radius,
-            48,
-            as->ball_array[i].color);
-    }
+    SDL_RenderGeoCircles(
+        as->circles,
+        as->renderer, 
+        NUM_BALLS
+    );
+    
     SDL_RenderPresent(as->renderer);
 
     return SDL_APP_CONTINUE;
@@ -381,7 +408,8 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
         AppState* as = appstate;
         SDL_DestroyRenderer(as->renderer);
         SDL_DestroyWindow(as->window);
-        SDL_free(as->collision_grid);
+        free_grid(as->collision_grid);
+        SDL_DestroyGeoCircles(as->circles);
         SDL_free(as);
     }
 }
