@@ -216,55 +216,128 @@ void update_balls(AppState* as, int substeps) {
     double frame_time = 1.0 / 60.0;
     double delta_t = frame_time / substeps;
 
+    Grid2D* grid = as->collision_grid;
+    GridCell2D* grid_cells = grid->cells;
+
     for (int i = 0; i < substeps; i++) {
-        // clear grid and add balls at current position
-        reset_collision_grid(as);
+
+        reset_cell_counts(grid);
 
         for (int ball_index = 0; ball_index < NUM_BALLS; ball_index++) {
+            Ball* current_ball = &as->ball_array[ball_index];
+            
             // apply gravity
-            as->ball_array[ball_index].velocity.y += (as->gravity * as->scene_scale * delta_t);
-
+            current_ball->velocity.y += (as->gravity * as->scene_scale * delta_t);
+            
             // get velocity divided by timestep
-            Vec2 timestep_velocity = (Vec2){as->ball_array[ball_index].velocity.x * delta_t * as->scene_scale,
-                as->ball_array[ball_index].velocity.y * as->scene_scale * delta_t};
-            vec2_add_inplace(&as->ball_array[ball_index].position, timestep_velocity);
+            Vec2 timestep_velocity = (Vec2){
+                current_ball->velocity.x * as->scene_scale * delta_t,
+                current_ball->velocity.y * as->scene_scale * delta_t
+            };
             
-            // get grid cell
-            int grid_cell = ball_position_to_grid(as, ball_index);
+            // update ball position based on velocity
+            vec2_add_inplace(&current_ball->position, timestep_velocity);
             
-            // check for other balls in the cell
-            for (int j = 0; j < MAX_BALLS_PER_CELL; j++) {
-                int grid_subcell = as->collision_grid[grid_cell].cell[j];
-                if (grid_subcell == -1) {
-                    break;
-                } else if (grid_subcell <= ball_index) {
-                    continue;
-                } else {
-                    handle_ball_collision(as, ball_index, grid_subcell);
-                }
+            // collision grid
+            int cell_index = xy_to_cell(
+                grid,
+                current_ball->position.x,
+                current_ball->position.y
+            );
+            increment_cell_count(grid, cell_index);
+        }
+
+        // add balls to grid
+        compute_cell_offsets(grid);
+        
+        for (int ball_index = 0; ball_index < NUM_BALLS; ball_index++) {
+            Ball* current_ball = &as->ball_array[ball_index];
+
+            int cell_index = xy_to_cell(
+                grid,
+                current_ball->position.x,
+                current_ball->position.y
+            );
+            
+            insert_item(
+                grid, 
+                ball_index, 
+                cell_index
+            );
+        }
+
+        // resolve collision constraints
+        for (int cell_index = 0; cell_index < grid->num_cells; cell_index++) {
+            // skip empty cells
+            if (grid_cells[cell_index].count == 0) {
+                continue;
             }
-
-            // look at neighbouring cells
-            for (int neighbour = 0; neighbour < 8; neighbour++) {
-                int neighbour_cell = as->collision_grid[grid_cell].neighbours[neighbour];
-
-                // inspect neighbour cell if it's not empty
-                if (neighbour_cell != -1) {
-                    for (int j = 0; j < MAX_BALLS_PER_CELL; j++) {
-                        int grid_subcell = as->collision_grid[neighbour_cell].cell[j];
-                        if (grid_subcell == -1 || grid_subcell <= ball_index) {
-                            continue;
-                        } else {
-                            handle_ball_collision(as, ball_index, grid_subcell);
+            // handle cells with one item (look up neighbours only)
+            if (grid_cells[cell_index].count == 1) {
+                int ball_index_a = grid->flat_items[grid_cells[cell_index].start];
+                int* neighbours = grid_cells[cell_index].neighbours;
+                
+                for (int i = 0; i < 8; i++) {
+                    // skip neighbours off grid
+                    if (neighbours[i] == -1) {
+                        continue;
+                    }
+                    // skip empty neighbours
+                    if (grid_cells[neighbours[i]].count == 0) {
+                        continue;
+                    }
+                    // handle collision constraint with occupied neighbour
+                    GridCell2D* neighbour_cell = &grid_cells[neighbours[i]];
+                    for (int j = 0; j < neighbour_cell->count; j++) {
+                        int ball_index_b = grid->flat_items[neighbour_cell->start + j];
+                        if (ball_index_a < ball_index_b) {
+                            handle_ball_collision(as, ball_index_a, ball_index_b);
                         }
                     }
                 }
             }
+            // handle cells with more than one item
+            if (grid_cells[cell_index].count > 1) {
+                int* neighbours = grid_cells[cell_index].neighbours;
 
+                for (int i = 0; i < grid_cells[cell_index].count; i++) {
+                    int ball_index_a = grid->flat_items[grid_cells[cell_index].start + i];
+                    for (int j = 0; j < grid_cells[cell_index].count; j++) {
+                        if (j <= i) {continue;}
+                        int ball_index_b = grid->flat_items[grid_cells[cell_index].start +j];
+                        if (ball_index_a < ball_index_b) {
+                            handle_ball_collision(as, ball_index_a, ball_index_b);
+                        }
+                    }
+
+                    for (int j = 0; j < 8; j++) {
+                        // skip neighbours off grid
+                        if (neighbours[j] == -1) {
+                            continue;
+                        }
+                        // skip empty neighbours
+                        if (grid_cells[neighbours[j]].count == 0) {
+                            continue;
+                        }
+                        // handle collision constraint with occupied neighbour
+                        GridCell2D* neighbour_cell = &grid_cells[neighbours[j]];
+                        for (int j = 0; j < neighbour_cell->count; j++) {
+                            int ball_index_b = grid->flat_items[neighbour_cell->start + j];
+                            if (ball_index_a < ball_index_b) {
+                                handle_ball_collision(as, ball_index_a, ball_index_b);
+                            }
+                        }
+                    }
+                }
+
+            }
+
+        }
+
+        for (int ball_index = 0; ball_index < NUM_BALLS; ball_index++) {
             handle_screen_edge_collision(as, ball_index);
         }
     }
-    as->last_time = SDL_GetTicksNS();
 }
 
 // SDL callbacks
@@ -392,6 +465,17 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     update_balls(as, SIM_SUBSTEPS);
 
+    for (int i = 0; i < NUM_BALLS; i++) {
+        SDL_GeoCirclesUpdate(
+            as->circles, 
+            i,
+            as->ball_array[i].position.x,
+            as->ball_array[i].position.y,
+            as->ball_array[i].radius,
+            as->ball_array[i].color
+        );
+    }
+    
     SDL_RenderGeoCircles(
         as->circles,
         as->renderer, 
