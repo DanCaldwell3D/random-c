@@ -10,12 +10,15 @@
 #include "src/collision_grid_2d.h"
 #include "src/sdl_helpers.h"
 
-#define NUM_BALLS 500
-#define SIM_SUBSTEPS 24
-#define RESTITUTION 0.99
+#define NUM_BALLS 4000
+#define SIM_SUBSTEPS 48
+#define RESTITUTION 0.997
+#define REST_SPEED_THRESHOLD 0.5
+#define REST_SUPPORT_EPSILON 1.0
+#define WAKE_SPEED_THRESHOLD 1.0
 
-#define MIN_BALL_RADIUS 5.0
-#define MAX_BALL_RADIUS 30.0
+#define MIN_BALL_RADIUS 8.0
+#define MAX_BALL_RADIUS 8.0
 #define WINDOW_WIDTH 1200
 #define WINDOW_HEIGHT 1000
 
@@ -25,9 +28,9 @@ typedef struct {
     double radius;
     double mass;
     bool rest;
+    bool supported;
     SDL_FColor color;
 } Ball;
-
 
 
 typedef struct {
@@ -63,6 +66,7 @@ float lerp(float start, float end, float position) {
 }
 
 SDL_FColor fcolor_lerp(SDL_FColor start_color, SDL_FColor end_color, float position) {
+    
     SDL_FColor lerp_colour;
 
     lerp_colour.r = lerp(start_color.r, end_color.r, position);
@@ -74,6 +78,7 @@ SDL_FColor fcolor_lerp(SDL_FColor start_color, SDL_FColor end_color, float posit
 }
 
 SDL_FColor hsv_to_rgb(float hue, float saturation, float value) {
+
     float r;
     float g;
     float b;
@@ -117,28 +122,15 @@ SDL_FColor hsv_to_rgb(float hue, float saturation, float value) {
             b = 0.0f;
     }
 
-    const SDL_FColor rgba = {r, g, b, 1.0f};
+    const SDL_FColor rgba = {
+        value * (r * saturation + (1.0f - saturation)),
+        value * (g * saturation + (1.0f - saturation)),
+        value * (b * saturation + (1.0f - saturation)),
+        1.0f
+    };
 
     return rgba;
 }
-
-// SDL_FColor circle_rainbow_color(AppState* as) {
-
-//     as->colour_current_time = SDL_GetTicks();
-//     SDL_FColor circle_color;
-
-//     if (as->colour_current_time - as->colour_start_time < as->transition_ticks) {
-//         float lerp_position = (float)(as->colour_current_time - as->colour_start_time) / (float)as->transition_ticks;
-//         circle_color = fcolor_lerp(as->last_circle_color, as->next_circle_color, lerp_position);
-//     } else {
-//         as->colour_start_time = as->colour_current_time;
-//         as->last_circle_color = as->next_circle_color;
-//         as->next_circle_color = (SDL_FColor){SDL_randf(), SDL_randf(), SDL_randf(), SDL_ALPHA_OPAQUE_FLOAT};
-//         circle_color = as->last_circle_color;
-//     }
-
-//     return circle_color;
-// }
 
 void handle_screen_edge_collision(AppState* as, int ball_index) {
     if (as->ball_array[ball_index].position.x < as->ball_array[ball_index].radius) {
@@ -220,12 +212,14 @@ void update_balls(AppState* as, int substeps) {
     GridCell2D* grid_cells = grid->cells;
 
     for (int i = 0; i < substeps; i++) {
-
         reset_cell_counts(grid);
 
         for (int ball_index = 0; ball_index < NUM_BALLS; ball_index++) {
             Ball* current_ball = &as->ball_array[ball_index];
             
+            // skip ball at rest
+            if (current_ball->rest) continue;
+
             // apply gravity
             current_ball->velocity.y += (as->gravity * as->scene_scale * delta_t);
             
